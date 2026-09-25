@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp CRM - Dashboard</title>
+    <title>WhatsApp CRM - Mirror Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 h-screen flex flex-col">
@@ -13,33 +13,33 @@
         <div class="bg-white p-8 rounded-lg shadow-md w-96">
             <h2 class="text-2xl font-bold mb-6 text-center text-green-600">WhatsApp CRM Login</h2>
             <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Your Name or Email</label>
+                <label class="block text-gray-700 text-sm font-bold mb-2">Your Name</label>
                 <input type="text" id="username" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Enter your name">
             </div>
-            <button onclick="directLogin()" class="w-full bg-green-500 text-white py-2 rounded-lg font-bold hover:bg-green-600">Login to CRM</button>
+            <button onclick="login()" class="w-full bg-green-500 text-white py-2 rounded-lg font-bold hover:bg-green-600">Open Dashboard</button>
         </div>
     </div>
 
     <!-- Dashboard Screen -->
     <div id="dashboard-screen" class="hidden flex h-full">
-        <!-- Sidebar -->
+        <!-- Sidebar: Chat List -->
         <div class="w-1/3 bg-white border-r flex flex-col">
             <div class="p-4 bg-gray-50 border-b flex justify-between items-center">
                 <span id="user-display" class="font-bold text-sm text-gray-700"></span>
                 <button onclick="location.reload()" class="text-red-500 text-xs font-bold hover:underline">Logout</button>
             </div>
             <div class="flex-1 overflow-y-auto p-2" id="chat-list">
-                <p class="text-center text-gray-400 text-sm mt-4">Loading chats...</p>
+                <p class="text-center text-gray-400 text-sm mt-4">Loading chats & history...</p>
             </div>
         </div>
 
-        <!-- Chat Area -->
+        <!-- Main Chat Area -->
         <div class="w-2/3 flex flex-col bg-gray-50">
             <div class="p-4 bg-white border-b">
                 <h3 id="active-chat" class="font-bold text-gray-700">Select a chat</h3>
             </div>
             <div class="flex-1 p-4 overflow-y-auto flex flex-col space-y-3" id="message-box">
-                <div class="text-center text-gray-400 my-auto">Select a contact from the left to view messages</div>
+                <div class="text-center text-gray-400 my-auto">Select a contact from the left to view conversation history</div>
             </div>
             <div class="p-4 bg-white border-b flex">
                 <input type="text" id="reply-msg" class="flex-1 border rounded-l-lg px-4 py-2 focus:outline-none" placeholder="Type a message...">
@@ -50,97 +50,82 @@
 
     <script>
         const backendUrl = "https://whatsapp-crm-backend-yhyx.onrender.com";
-        let activePhone = "";
-        let chatData = {};
+        let activeJid = "";
 
-        function directLogin() {
+        function login() {
             const name = document.getElementById('username').value;
-            if(!name) {
-                alert("Please enter a name!");
-                return;
-            }
-            document.getElementById('user-display').innerText = `Logged in: ${name}`;
+            if(!name) { alert("Please enter name"); return; }
+            document.getElementById('user-display').innerText = `Agent: ${name}`;
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('dashboard-screen').classList.remove('hidden');
-            fetchMessages();
+            fetchChats();
+            setInterval(fetchChats, 4000);
             setInterval(fetchMessages, 3000);
         }
 
-        async function fetchMessages() {
+        async function fetchChats() {
             try {
-                const res = await fetch(`${backendUrl}/messages`);
+                const res = await fetch(`${backendUrl}/chats`);
                 const data = await res.json();
-                chatData = {};
-                if(data && data.messages) {
-                    data.messages.forEach(m => {
-                        if (!chatData[m.phone]) chatData[m.phone] = [];
-                        chatData[m.phone].push(m);
-                    });
+                const list = document.getElementById('chat-list');
+                if(!data.chats || data.chats.length === 0) {
+                    list.innerHTML = `<p class="text-center text-gray-400 text-sm mt-4">No chats found yet. Syncing...</p>`;
+                    return;
                 }
-                renderChatList();
-                if (activePhone) renderMessages();
-            } catch (err) { 
-                console.log("Error fetching messages:", err); 
-            }
+                list.innerHTML = "";
+                data.chats.forEach(chat => {
+                    list.innerHTML += `
+                        <div onclick="openChat('${chat.id}', '${chat.name}')" class="p-3 hover:bg-gray-100 cursor-pointer rounded border-b ${activeJid === chat.id ? 'bg-gray-100' : ''}">
+                            <p class="font-bold text-sm text-gray-800">${chat.name}</p>
+                            <p class="text-xs text-gray-500 truncate">${chat.id.replace('@s.whatsapp.net', '')}</p>
+                        </div>
+                    `;
+                });
+            } catch(err) { console.log(err); }
         }
 
-        function renderChatList() {
-            const list = document.getElementById('chat-list');
-            list.innerHTML = "";
-            const phones = Object.keys(chatData);
-            if (phones.length === 0) {
-                list.innerHTML = `<p class="text-center text-gray-400 text-sm mt-4">No chats yet. Send a message to your WhatsApp!</p>`;
-                return;
-            }
-            phones.forEach(phone => {
-                const lastMsg = chatData[phone][chatData[phone].length - 1];
-                list.innerHTML += `
-                    <div onclick="openChat('${phone}')" class="p-3 hover:bg-gray-100 cursor-pointer rounded border-b ${activePhone === phone ? 'bg-gray-100' : ''}">
-                        <p class="font-bold text-sm text-gray-800">${phone}</p>
-                        <p class="text-xs text-gray-500 truncate">${lastMsg.text}</p>
-                    </div>
-                `;
-            });
+        async function openChat(jid, name) {
+            activeJid = jid;
+            document.getElementById('active-chat').innerText = `Chat with: ${name}`;
+            fetchMessages();
         }
 
-        function openChat(phone) {
-            activePhone = phone;
-            document.getElementById('active-chat').innerText = `Chat with: ${phone}`;
-            renderMessages();
-        }
-
-        function renderMessages() {
-            const box = document.getElementById('message-box');
-            box.innerHTML = "";
-            if (!chatData[activePhone]) return;
-            chatData[activePhone].forEach(m => {
-                const align = m.sender === 'agent' ? 'ml-auto bg-green-100' : 'mr-auto bg-white';
-                box.innerHTML += `
-                    <div class="p-3 rounded-lg max-w-xs shadow ${align} text-sm">
-                        <p class="text-[10px] text-gray-500 font-bold mb-1">${m.sender === 'agent' ? 'Team Agent' : 'Customer'}</p>
-                        <p>${m.text}</p>
-                        <span class="text-[9px] text-gray-400 block text-right mt-1">${m.time}</span>
-                    </div>
-                `;
-            });
-            box.scrollTop = box.scrollHeight;
+        async function fetchMessages() {
+            if(!activeJid) return;
+            try {
+                const res = await fetch(`${backendUrl}/messages/${activeJid}`);
+                const data = await res.json();
+                const box = document.getElementById('message-box');
+                box.innerHTML = "";
+                if(!data.messages || data.messages.length === 0) {
+                    box.innerHTML = `<div class="text-center text-gray-400 my-auto">No messages in this chat</div>`;
+                    return;
+                }
+                data.messages.forEach(m => {
+                    const align = m.fromMe ? 'ml-auto bg-green-100' : 'mr-auto bg-white';
+                    box.innerHTML += `
+                        <div class="p-3 rounded-lg max-w-xs shadow ${align} text-sm">
+                            <p>${m.text}</p>
+                            <span class="text-[9px] text-gray-400 block text-right mt-1">${m.time}</span>
+                        </div>
+                    `;
+                });
+                box.scrollTop = box.scrollHeight;
+            } catch(err) { console.log(err); }
         }
 
         async function sendMessage() {
             const text = document.getElementById('reply-msg').value;
-            if (!text || !activePhone) return;
+            if(!text || !activeJid) return;
             document.getElementById('reply-msg').value = "";
-            
             try {
                 await fetch(`${backendUrl}/send-message`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone: activePhone, message: text })
+                    body: JSON.stringify({ phone: activeJid, message: text })
                 });
                 fetchMessages();
-            } catch (err) {
-                alert("Message send karne me masla aaya: " + err.message);
-            }
+            } catch(err) { alert("Error sending message"); }
         }
     </script>
 </body>
